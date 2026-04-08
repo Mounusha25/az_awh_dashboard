@@ -23,7 +23,7 @@ const StationCard: React.FC<StationCardProps> = ({ station }) => {
   const router = useRouter();
 
   const handleViewDetails = () => {
-    router.push(`/stations/${station.id}`);
+    router.push(`/stations/${encodeURIComponent(station.id)}`);
   };
 
   const getStatusColor = (status: string) => {
@@ -57,7 +57,7 @@ const StationCard: React.FC<StationCardProps> = ({ station }) => {
       <CardMedia
         component="img"
         height="200"
-        image={station.image || `https://picsum.photos/400/300?random=${station.id}`}
+        image={station.image || `https://picsum.photos/400/300?random=${typeof station.id === 'number' ? station.id : 1}`}
         alt={station.name}
         sx={{ 
           objectFit: 'cover',
@@ -97,8 +97,21 @@ const StationCard: React.FC<StationCardProps> = ({ station }) => {
             color: '#555'
           }}
         >
-          📍 {station.area}
+          📍 {station.location || 'Location Unknown'}
         </Typography>
+        
+        {station.units && station.units.length > 0 && (
+          <Typography 
+            variant="body2" 
+            sx={{
+              mb: 1.5,
+              color: '#555',
+              fontWeight: 500
+            }}
+          >
+            🔧 <strong>Unit:</strong> {station.units.join(', ')}
+          </Typography>
+        )}
         
         <Typography 
           variant="body2" 
@@ -106,39 +119,11 @@ const StationCard: React.FC<StationCardProps> = ({ station }) => {
           sx={{
             lineHeight: 1.7,
             mb: 1.5,
-            color: '#666'
+            color: '#666',
+            fontSize: '0.875rem'
           }}
         >
-          {station.description || "This atmospheric water harvesting station utilizes advanced condensation technology to extract moisture from ambient air, providing sustainable and reliable water solutions for the community."}
-        </Typography>
-        
-        <Typography 
-          variant="body2" 
-          sx={{
-            mb: 0.5,
-            color: '#555'
-          }}
-        >
-          💧 <strong>Daily Capacity:</strong> 500-800 liters
-        </Typography>
-        
-        <Typography 
-          variant="body2" 
-          sx={{
-            mb: 0.5,
-            color: '#555'
-          }}
-        >
-          🌡️ <strong>Efficiency:</strong> 85-92%
-        </Typography>
-        
-        <Typography 
-          variant="body2" 
-          sx={{
-            color: '#555'
-          }}
-        >
-          🕒 <strong>Last Updated:</strong> 2 hours ago
+          Atmospheric water harvesting station utilizing advanced condensation technology to extract moisture from ambient air.
         </Typography>
       </CardContent>
       

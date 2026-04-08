@@ -1,7 +1,7 @@
 export interface Station {
-  id: number;
+  id: string | number; // Accept both string (station_name) and number (legacy ID)
   name: string;
-  area: string;
+  location?: string;  // Optional location field from API
   status: 'Online' | 'Offline';
   image?: string;
   description?: string;
@@ -67,4 +67,5 @@ export type FeatureType =
 export interface ChartDataPoint {
   date: string;
   value: number;
+  value2?: number;
 }

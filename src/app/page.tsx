@@ -1,11 +1,61 @@
 'use client';
 
-import React from 'react';
-import { Typography, Box, Fade, Link as MuiLink } from '@mui/material';
+import React, { useEffect, useState } from 'react';
+import { Typography, Box, Fade, Link as MuiLink, CircularProgress, Alert } from '@mui/material';
 import StationCard from '@/components/StationCard';
-import { stations } from '@/data/constants';
+import { apiClient, type StationInfo } from '@/lib/api-client';
 
 export default function Home() {
+  const [stations, setStations] = useState<StationInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchStations() {
+      try {
+        setLoading(true);
+        const data = await apiClient.getStations();
+        setStations(data);
+        setError(null);
+      } catch (err) {
+        console.error('Failed to fetch stations:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load stations');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchStations();
+  }, []);
+
+  // Map API data to StationCard format
+  const stationCards = stations.map((station, index) => ({
+    id: station.station_name, // Use station_name as ID for routing
+    name: station.station_name,
+    location: station.location || 'Arizona, USA',  // Default location
+    status: (station.status === 'active' ? 'Online' : 'Offline') as 'Online' | 'Offline',
+    units: [station.unit],
+    image: undefined,  // Let it use default random image
+  }));
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '80vh' }}>
+        <CircularProgress size={60} sx={{ color: '#901340' }} />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ p: 4 }}>
+        <Alert severity="error" sx={{ maxWidth: 600, mx: 'auto' }}>
+          {error}
+        </Alert>
+      </Box>
+    );
+  }
+
   return (
     <Box>
       {/* Hero Section - Full Page */}
@@ -105,9 +155,9 @@ export default function Home() {
 
         <Box sx={{ mb: 5, textAlign: 'center' }}>
           <Typography variant="body1" sx={{ fontWeight: 500, color: '#484848', fontSize: '0.95rem' }}>
-            Total Stations: {stations.length} | 
-            Online: {stations.filter(s => s.status === 'Online').length} | 
-            Offline: {stations.filter(s => s.status === 'Offline').length}
+            Total Stations: {stationCards.length} | 
+            Online: {stationCards.filter(s => s.status === 'Online').length} | 
+            Offline: {stationCards.filter(s => s.status === 'Offline').length}
           </Typography>
         </Box>
       
@@ -140,7 +190,7 @@ export default function Home() {
           justifyItems: 'center',
         }}
       >
-        {stations.map((station, index) => (
+        {stationCards.map((station, index) => (
           <Fade key={station.id} in={true} timeout={500 + index * 100}>
             <Box sx={{ width: '100%', maxWidth: '380px', display: 'flex' }}>
               <StationCard station={station} />
@@ -148,322 +198,270 @@ export default function Home() {
           </Fade>
         ))}
       </Box>
-      </Box>
 
-      {/* Technology & Research Section */}
+      {/* Separator */}
       <Box 
         sx={{ 
-          py: 10, 
-          px: { xs: 2, sm: 3, md: 4 },
-          background: 'linear-gradient(180deg, #fafafa 0%, #ffffff 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          my: 8
         }}
       >
-        <Box sx={{ maxWidth: '1200px', mx: 'auto' }}>
-          {/* Section Title */}
-          <Typography 
-            variant="h4" 
-            component="h2" 
-            gutterBottom
-            sx={{ 
-              mb: 1.5,
-              fontWeight: 700,
-              color: '#191919',
-              textAlign: 'center',
-              letterSpacing: '-0.5px'
-            }}
-          >
-            Atmospheric Water Harvesting Technology
-          </Typography>
-          
-          <Typography 
-            variant="h6" 
-            sx={{ 
-              textAlign: 'center', 
-              mb: 7,
-              maxWidth: '800px',
-              mx: 'auto',
-              lineHeight: 1.7,
-              color: '#484848',
-              fontWeight: 400,
-              fontSize: { xs: '1.05rem', sm: '1.1rem', md: '1.15rem' }
-            }}
-          >
-            Pioneering research in sustainable water solutions for Arizona's future
-          </Typography>
+        <Box sx={{ flex: 1, height: '2px', background: 'linear-gradient(to right, transparent, #901340, transparent)' }} />
+        <Typography 
+          variant="body2" 
+          sx={{ 
+            color: '#901340', 
+            fontWeight: 600, 
+            textTransform: 'uppercase', 
+            letterSpacing: '2px',
+            px: 2
+          }}
+        >
+          LIVE STATISTICS
+        </Typography>
+        <Box sx={{ flex: 1, height: '2px', background: 'linear-gradient(to right, transparent, #901340, transparent)' }} />
+      </Box>
 
-          {/* Content Grid */}
+      {/* Stats Row - Horizontal Scrolling */}
+      <Box 
+        sx={{ 
+          mt: 8,
+          overflow: 'hidden',
+          position: 'relative',
+          '&::before, &::after': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            width: '100px',
+            zIndex: 2,
+            pointerEvents: 'none',
+          },
+          '&::before': {
+            left: 0,
+            background: 'linear-gradient(to right, #fafafa, transparent)',
+          },
+          '&::after': {
+            right: 0,
+            background: 'linear-gradient(to left, #fafafa, transparent)',
+          }
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 3,
+            animation: 'scroll 20s linear infinite',
+            '@keyframes scroll': {
+              '0%': {
+                transform: 'translateX(0)',
+              },
+              '100%': {
+                transform: 'translateX(-50%)',
+              },
+            },
+            '&:hover': {
+              animationPlayState: 'paused',
+            }
+          }}
+        >
+          {/* First set of stats */}
           <Box 
             sx={{ 
-              display: 'flex',
-              flexDirection: { xs: 'column', md: 'row' },
-              gap: 4,
-              mb: 5
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #901340',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(144, 19, 64, 0.12)',
+                transform: 'translateY(-2px)'
+              }
             }}
           >
-            {/* Left Column - Mission */}
-            <Box sx={{ flex: 1 }}>
-              <Box
-                sx={{
-                  p: 4.5,
-                  height: '100%',
-                  background: '#ffffff',
-                  borderRadius: 2,
-                  border: '2px solid #901340',
-                  boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    boxShadow: '0 4px 20px rgba(144, 19, 64, 0.15)',
-                    transform: 'translateY(-2px)'
-                  }
-                }}
-              >
-                <Typography 
-                  variant="h5" 
-                  sx={{ 
-                    fontWeight: 700, 
-                    color: '#901340',
-                    mb: 3,
-                    fontSize: '1.5rem',
-                    letterSpacing: '-0.3px'
-                  }}
-                >
-                  Our Mission
-                </Typography>
-                <Typography 
-                  variant="body1" 
-                  sx={{ 
-                    lineHeight: 1.8,
-                    color: '#2b2b2b',
-                    mb: 2.5,
-                    fontSize: '1rem'
-                  }}
-                >
-                  The Arizona Atmospheric Water Harvesting (AzAWH) project represents a groundbreaking approach to addressing water scarcity in arid regions. By extracting water directly from the atmosphere, we're developing sustainable solutions for one of the Southwest's most critical challenges.
-                </Typography>
-                <Typography 
-                  variant="body1" 
-                  sx={{ 
-                    lineHeight: 1.8,
-                    color: '#2b2b2b',
-                    fontSize: '1rem'
-                  }}
-                >
-                  Our testbeds monitor environmental conditions, water production efficiency, and energy consumption across diverse Arizona climate zones, providing invaluable data for optimizing AWH technology.
-                </Typography>
-              </Box>
-            </Box>
-
-            {/* Right Column - Research Partnerships */}
-            <Box sx={{ flex: 1 }}>
-              <Box
-                sx={{
-                  p: 4.5,
-                  height: '100%',
-                  background: '#ffffff',
-                  borderRadius: 2,
-                  border: '2px solid #ffcb25',
-                  boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    boxShadow: '0 4px 20px rgba(255, 203, 37, 0.15)',
-                    transform: 'translateY(-2px)'
-                  }
-                }}
-              >
-                <Typography 
-                  variant="h5" 
-                  sx={{ 
-                    fontWeight: 700, 
-                    color: '#ffcb25',
-                    mb: 3.5,
-                    fontSize: '1.5rem',
-                    letterSpacing: '-0.3px'
-                  }}
-                >
-                  Research Partnerships
-                </Typography>
-                
-                <Box sx={{ mb: 3.5 }}>
-                  <Typography 
-                    variant="subtitle1" 
-                    sx={{ 
-                      fontWeight: 700,
-                      color: '#191919',
-                      mb: 1,
-                      fontSize: '1.1rem'
-                    }}
-                  >
-                    Arizona State University
-                  </Typography>
-                  <Typography 
-                    variant="body2" 
-                    sx={{ 
-                      lineHeight: 1.7,
-                      color: '#484848',
-                      fontSize: '0.95rem'
-                    }}
-                  >
-                    Leading academic research and innovation in atmospheric water harvesting technology and sustainable water resource management.
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mb: 3.5 }}>
-                  <Typography 
-                    variant="subtitle1" 
-                    sx={{ 
-                      fontWeight: 700,
-                      color: '#191919',
-                      mb: 1,
-                      fontSize: '1.1rem'
-                    }}
-                  >
-                    Salt River Project (SRP)
-                  </Typography>
-                  <Typography 
-                    variant="body2" 
-                    sx={{ 
-                      lineHeight: 1.7,
-                      color: '#484848',
-                      fontSize: '0.95rem'
-                    }}
-                  >
-                    Collaborative industrial-scale testing to explore AWH integration with existing water and power infrastructure.
-                  </Typography>
-                </Box>
-
-                <Box>
-                  <Typography 
-                    variant="subtitle1" 
-                    sx={{ 
-                      fontWeight: 700,
-                      color: '#191919',
-                      mb: 1,
-                      fontSize: '1.1rem'
-                    }}
-                  >
-                    Climate Adaptation Research
-                  </Typography>
-                  <Typography 
-                    variant="body2" 
-                    sx={{ 
-                      lineHeight: 1.7,
-                      color: '#484848',
-                      fontSize: '0.95rem'
-                    }}
-                  >
-                    Developing data-driven insights to support climate resilience and water security strategies for the Southwest region.
-                  </Typography>
-                </Box>
-              </Box>
-            </Box>
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#901340', mb: 1.5, fontSize: '2.5rem' }}>
+              {stations.length}
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Active Stations
+            </Typography>
+          </Box>
+          
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #ffcb25',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(255, 203, 37, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#ffcb25', mb: 1.5, fontSize: '2.5rem' }}>
+              12+
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Parameters Tracked
+            </Typography>
           </Box>
 
-          {/* Stats Row */}
           <Box 
             sx={{ 
-              display: 'grid',
-              gridTemplateColumns: {
-                xs: '1fr',
-                sm: 'repeat(2, 1fr)',
-                md: 'repeat(4, 1fr)'
-              },
-              gap: 3,
-              mt: 3
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #901340',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(144, 19, 64, 0.12)',
+                transform: 'translateY(-2px)'
+              }
             }}
           >
-            <Box 
-              sx={{ 
-                textAlign: 'center',
-                p: 4,
-                background: '#ffffff',
-                borderRadius: 2,
-                border: '2px solid #901340',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                transition: 'all 0.3s ease',
-                '&:hover': {
-                  boxShadow: '0 4px 16px rgba(144, 19, 64, 0.12)',
-                  transform: 'translateY(-2px)'
-                }
-              }}
-            >
-              <Typography variant="h3" sx={{ fontWeight: 700, color: '#901340', mb: 1.5, fontSize: '2.5rem' }}>
-                {stations.length}
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Active Stations
-              </Typography>
-            </Box>
-            
-            <Box 
-              sx={{ 
-                textAlign: 'center',
-                p: 4,
-                background: '#ffffff',
-                borderRadius: 2,
-                border: '2px solid #ffcb25',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                transition: 'all 0.3s ease',
-                '&:hover': {
-                  boxShadow: '0 4px 16px rgba(255, 203, 37, 0.12)',
-                  transform: 'translateY(-2px)'
-                }
-              }}
-            >
-              <Typography variant="h3" sx={{ fontWeight: 700, color: '#ffcb25', mb: 1.5, fontSize: '2.5rem' }}>
-                12+
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Parameters Tracked
-              </Typography>
-            </Box>
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#901340', mb: 1.5, fontSize: '2.5rem' }}>
+              24/7
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Real-time Monitoring
+            </Typography>
+          </Box>
 
-            <Box 
-              sx={{ 
-                textAlign: 'center',
-                p: 4,
-                background: '#ffffff',
-                borderRadius: 2,
-                border: '2px solid #901340',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                transition: 'all 0.3s ease',
-                '&:hover': {
-                  boxShadow: '0 4px 16px rgba(144, 19, 64, 0.12)',
-                  transform: 'translateY(-2px)'
-                }
-              }}
-            >
-              <Typography variant="h3" sx={{ fontWeight: 700, color: '#901340', mb: 1.5, fontSize: '2.5rem' }}>
-                24/7
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Real-time Monitoring
-              </Typography>
-            </Box>
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #ffcb25',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(255, 203, 37, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#ffcb25', mb: 1.5, fontSize: '2.5rem' }}>
+              100%
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Sustainable Water
+            </Typography>
+          </Box>
 
-            <Box 
-              sx={{ 
-                textAlign: 'center',
-                p: 4,
-                background: '#ffffff',
-                borderRadius: 2,
-                border: '2px solid #ffcb25',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                transition: 'all 0.3s ease',
-                '&:hover': {
-                  boxShadow: '0 4px 16px rgba(255, 203, 37, 0.12)',
-                  transform: 'translateY(-2px)'
-                }
-              }}
-            >
-              <Typography variant="h3" sx={{ fontWeight: 700, color: '#ffcb25', mb: 1.5, fontSize: '2.5rem' }}>
-                100%
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Sustainable Water
-              </Typography>
-            </Box>
+          {/* Duplicate set for seamless loop */}
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #901340',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(144, 19, 64, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#901340', mb: 1.5, fontSize: '2.5rem' }}>
+              {stations.length}
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Active Stations
+            </Typography>
+          </Box>
+          
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #ffcb25',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(255, 203, 37, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#ffcb25', mb: 1.5, fontSize: '2.5rem' }}>
+              12+
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Parameters Tracked
+            </Typography>
+          </Box>
+
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #901340',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(144, 19, 64, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#901340', mb: 1.5, fontSize: '2.5rem' }}>
+              24/7
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Real-time Monitoring
+            </Typography>
+          </Box>
+
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #ffcb25',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(255, 203, 37, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#ffcb25', mb: 1.5, fontSize: '2.5rem' }}>
+              100%
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Sustainable Water
+            </Typography>
           </Box>
         </Box>
+      </Box>
       </Box>
     </Box>
   );

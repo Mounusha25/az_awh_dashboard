@@ -21,7 +21,7 @@ export const stations: Station[] = [
   { 
     id: 1, 
     name: "CHP Cooling Tower", 
-    area: "Central Heat & Power Facility", 
+    location: "Central Heat & Power Facility", 
     status: "Online",
     units: ["AguaPars", "Tsunami"],  // Two units at CHP
     image: "https://picsum.photos/seed/chp-cooling/400/300",
@@ -30,7 +30,7 @@ export const stations: Station[] = [
   { 
     id: 2, 
     name: "ASU Greenhouse", 
-    area: "ASU Polytechnic Campus", 
+    location: "ASU Polytechnic Campus", 
     status: "Online",
     units: ["DewStand"],  // One unit at Greenhouse
     image: "https://picsum.photos/seed/greenhouse/400/300",
@@ -39,7 +39,7 @@ export const stations: Station[] = [
   { 
     id: 3, 
     name: "SRP Cooling Tower", 
-    area: "Salt River Project Facility", 
+    location: "Salt River Project Facility", 
     status: "Online",
     units: ["Airjoule"],  // One unit at SRP
     image: "https://picsum.photos/seed/srp-cooling/400/300",
@@ -48,7 +48,7 @@ export const stations: Station[] = [
   { 
     id: 4, 
     name: "Mobile Station", 
-    area: "Various Locations", 
+    location: "Various Locations", 
     status: "Online",
     units: ["Airjoule"],  // One unit at Mobile
     image: "https://picsum.photos/seed/mobile/400/300",

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Typography,
@@ -26,31 +26,64 @@ import {
 } from '@mui/material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { ArrowBack, Circle as CircleIcon, CalendarMonth, Tune } from '@mui/icons-material';
+import { ArrowBack, Circle as CircleIcon, CalendarMonth, Tune, Download } from '@mui/icons-material';
 import { format } from 'date-fns';
 import FeaturePlot from '@/components/FeaturePlot';
-import CSVExport from '@/components/CSVExport';
-import { getStationById, sampleData, getDataForDateRange } from '@/data/constants';
+import Papa from 'papaparse';
+import { apiClient, type StationInfo, type StationReading, type ReadingsResponse, type HourlyAggregationResponse } from '@/lib/api-client';
 import { FeatureType, ChartDataPoint, StationData } from '@/types';
 
-// Define parameter categories and their sub-parameters
-const parameterCategories = {
-  'Intake Air': ['Temperature', 'Relative Humidity', 'Air Velocity', 'Absolute Humidity'],
-  'Outtake Air': ['Temperature', 'Relative Humidity', 'Air Velocity', 'Absolute Humidity'],
-  'Water Production': ['Flow Rate', 'Conductivity', 'pH', 'Amount of Water'],
-  'Power Consumption': ['Power', 'Voltage', 'Current']
+// Field mapping: API field names to display names
+const fieldDisplayNames: Record<string, string> = {
+  temperature: 'Temperature',
+  humidity: 'Relative Humidity',
+  velocity: 'Air Velocity',
+  outtake_humidity: 'Outtake Humidity',
+  outtake_velocity: 'Outtake Velocity',
+  outtake_temperature: 'Outtake Temperature',
+  flow_lmin: 'Flow Rate (L/min)',
+  flow_hz: 'Flow Rate (Hz)',
+  flow_total: 'Total Flow',
+  weight: 'Amount of Water',
+  power: 'Power',
+  voltage: 'Voltage',
+  current: 'Current',
+  energy: 'Energy',
+};
+
+// Field categories for grouping
+const fieldCategories: Record<string, string> = {
+  temperature: 'Intake Air',
+  humidity: 'Intake Air',
+  velocity: 'Intake Air',
+  outtake_humidity: 'Outtake Air',
+  outtake_velocity: 'Outtake Air',
+  outtake_temperature: 'Outtake Air',
+  flow_lmin: 'Water Production',
+  flow_hz: 'Water Production',
+  flow_total: 'Water Production',
+  weight: 'Water Production',
+  power: 'Power Consumption',
+  voltage: 'Power Consumption',
+  current: 'Power Consumption',
+  energy: 'Power Consumption',
 };
 
 export default function StationDetails() {
   const params = useParams();
   const router = useRouter();
-  const stationId = parseInt(params.id as string, 10);
+  const stationName = decodeURIComponent(params.id as string);
   
-  const station = getStationById(stationId);
+  // API data states
+  const [station, setStation] = useState<StationInfo | null>(null);
+  const [readings, setReadings] = useState<StationReading[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [availableFields, setAvailableFields] = useState<string[]>([]);
   
-  // Use static dates to avoid hydration mismatches
-  const defaultEndDate = new Date('2025-10-30');
-  const defaultStartDate = new Date('2025-10-24'); // 7 days before end date
+  // Defaults will be derived from actual readings data (set in useEffect to avoid hydration mismatch)
+  const defaultEndDate = new Date('2026-04-07');
+  const defaultStartDate = new Date('2026-03-31');
   
   // State for mounted check
   const [mounted, setMounted] = useState(false);
@@ -66,6 +99,11 @@ export default function StationDetails() {
   const [dateDialogOpen, setDateDialogOpen] = useState(false);
   const [paramDialogOpen, setParamDialogOpen] = useState(false);
 
+  // Download states
+  const [rawDownloadFields, setRawDownloadFields] = useState<string[]>([]);
+  const [rawDownloading, setRawDownloading] = useState(false);
+  const [hourlyDownloading, setHourlyDownloading] = useState(false);
+
   // Temporary states for dialogs
   const [tempStartDate, setTempStartDate] = useState<Date | null>(null);
   const [tempEndDate, setTempEndDate] = useState<Date | null>(null);
@@ -73,16 +111,96 @@ export default function StationDetails() {
   const [tempCategory, setTempCategory] = useState<string>('');
   const [tempParameters, setTempParameters] = useState<string[]>([]);
 
+  // Fetch station data and readings
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        setLoading(true);
+        
+        // Get station metadata
+        const stations = await apiClient.getStations();
+        const foundStation = stations.find(s => s.station_name === stationName);
+        
+        if (!foundStation) {
+          setError('Station not found');
+          return;
+        }
+        
+        setStation(foundStation);
+        setAvailableFields(foundStation.metadata.available_fields);
+        // Pre-select all fields for raw download
+        setRawDownloadFields(foundStation.metadata.available_fields.filter(f => fieldDisplayNames[f]));
+        
+        // Get initial readings (last 7 days)
+        const readingsResponse = await apiClient.getStationReadings(stationName, {
+          limit: 1000,
+        });
+        
+        setReadings(readingsResponse.data);
+        
+        // Auto-set date range from actual data
+        if (readingsResponse.data.length > 0) {
+          const timestamps = readingsResponse.data.map(r => new Date(r.timestamp).getTime());
+          const maxTime = Math.max(...timestamps);
+          const autoEnd = new Date(maxTime + 60 * 60 * 1000); // 1hr buffer
+          const autoStart = new Date(maxTime - 7 * 24 * 60 * 60 * 1000); // 7 days before latest
+          setStartDate(autoStart);
+          setEndDate(autoEnd);
+          setTempStartDate(autoStart);
+          setTempEndDate(autoEnd);
+          
+          // Auto-select first available category & parameter
+          const fields = foundStation.metadata.available_fields;
+          for (const field of fields) {
+            const cat = fieldCategories[field];
+            if (cat && fieldDisplayNames[field]) {
+              setSelectedCategory(cat);
+              setSelectedParameters([field]);
+              setTempCategory(cat);
+              setTempParameters([field]);
+              setSelectedUnit(foundStation.unit || '');
+              setTempUnit(foundStation.unit || '');
+              break;
+            }
+          }
+        }
+        
+        setError(null);
+      } catch (err) {
+        console.error('Failed to fetch station data:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load station data');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, [stationName]);
+
   // Handle mounting
   React.useEffect(() => {
     setMounted(true);
   }, []);
   
-  // Handle date period apply
-  const handleDateApply = () => {
+  // Handle date period apply - re-fetch from API with new date range
+  const handleDateApply = async () => {
     setStartDate(tempStartDate);
     setEndDate(tempEndDate);
     setDateDialogOpen(false);
+    
+    // Re-fetch readings from API with the selected date range
+    if (tempStartDate && tempEndDate) {
+      try {
+        const readingsResponse = await apiClient.getStationReadings(stationName, {
+          start_date: tempStartDate.toISOString(),
+          end_date: tempEndDate.toISOString(),
+          limit: 10000,
+        });
+        setReadings(readingsResponse.data);
+      } catch (err) {
+        console.error('Failed to fetch readings for date range:', err);
+      }
+    }
   };
   
   // Handle parameters apply
@@ -118,66 +236,108 @@ export default function StationDetails() {
     setSelectedParameters([]);
   };
 
+  // Get available parameters grouped by category
+  const parameterCategories = useMemo(() => {
+    const categories: Record<string, string[]> = {};
+    
+    availableFields.forEach(field => {
+      const category = fieldCategories[field];
+      const displayName = fieldDisplayNames[field];
+      
+      if (category && displayName) {
+        if (!categories[category]) {
+          categories[category] = [];
+        }
+        categories[category].push(field);
+      }
+    });
+    
+    return categories;
+  }, [availableFields]);
+
   // Demo helper: apply demo selections so users can preview charts
   const applyDemoSelection = () => {
-    // Use the static defaults defined above
-    setTempStartDate(defaultStartDate);
-    setTempEndDate(defaultEndDate);
-    setTempCategory('Intake Air');
-    setTempParameters(['Temperature']);
-    setTempUnit(station?.units && station.units.length > 0 ? station.units[0] : '');
+    const firstCategory = Object.keys(parameterCategories)[0];
+    const firstParam = parameterCategories[firstCategory]?.[0];
+    
+    if (firstCategory && firstParam) {
+      // Use the static defaults defined above
+      setTempStartDate(defaultStartDate);
+      setTempEndDate(defaultEndDate);
+      setTempCategory(firstCategory);
+      setTempParameters([firstParam]);
+      setTempUnit(station?.unit || '');
 
-    // Apply immediately
-    setStartDate(defaultStartDate);
-    setEndDate(defaultEndDate);
-    setSelectedCategory('Intake Air');
-    setSelectedParameters(['Temperature']);
-    setSelectedUnit(station?.units && station.units.length > 0 ? station.units[0] : '');
+      // Apply immediately
+      setStartDate(defaultStartDate);
+      setEndDate(defaultEndDate);
+      setSelectedCategory(firstCategory);
+      setSelectedParameters([firstParam]);
+      setSelectedUnit(station?.unit || '');
+    }
   };
   
-    const chartData: ChartDataPoint[] = useMemo(() => {
-    if (!startDate || !endDate || selectedParameters.length === 0) return [];
+  const chartData: ChartDataPoint[] = useMemo(() => {
+    if (!startDate || !endDate || selectedParameters.length === 0 || readings.length === 0) return [];
     
-    const data = getDataForDateRange(
-      format(startDate, 'yyyy-MM-dd'),
-      format(endDate, 'yyyy-MM-dd')
-    );
+    // Filter readings by date range
+    const start = startDate.getTime();
+    const end = endDate.getTime();
     
-    // Map the data to chart format based on selected parameters
-    // For now, we'll use the first selected parameter for the chart
-    const featureKey = `${selectedCategory} - ${selectedParameters[0]}` as keyof StationData;
+    const filteredReadings = readings.filter(reading => {
+      const readingDate = new Date(reading.timestamp).getTime();
+      return readingDate >= start && readingDate <= end;
+    });
     
-    return data.map(item => ({
-      date: item.date,
-      value: typeof item[featureKey] === 'number' ? item[featureKey] as number : 0
+    // Sort ascending by timestamp (API returns descending)
+    filteredReadings.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    
+    const fieldKey1 = selectedParameters[0] as keyof StationReading;
+    const fieldKey2 = selectedParameters.length > 1 ? selectedParameters[1] as keyof StationReading : null;
+    
+    return filteredReadings.map(reading => ({
+      date: reading.timestamp,
+      value: typeof reading[fieldKey1] === 'number' ? reading[fieldKey1] as number : 0,
+      ...(fieldKey2 ? { value2: typeof reading[fieldKey2] === 'number' ? reading[fieldKey2] as number : 0 } : {}),
     }));
-  }, [startDate, endDate, selectedCategory, selectedParameters]);
+  }, [startDate, endDate, selectedParameters, readings]);
   
   const filteredData = useMemo(() => {
-    if (!startDate || !endDate) return [];
+    if (!startDate || !endDate || readings.length === 0) return [];
     
-    return getDataForDateRange(
-      format(startDate, 'yyyy-MM-dd'),
-      format(endDate, 'yyyy-MM-dd')
-    );
-  }, [startDate, endDate]);
+    const start = startDate.getTime();
+    const end = endDate.getTime();
+    
+    return readings.filter(reading => {
+      const readingDate = new Date(reading.timestamp).getTime();
+      return readingDate >= start && readingDate <= end;
+    });
+  }, [startDate, endDate, readings]);
   
   const handleBack = () => {
     router.push('/');
   };
   
   const getStatusColor = (status: string) => {
-    return status === 'Online' ? 'success' : 'error';
+    return status === 'active' ? 'success' : 'error';
   };
   
   const getStatusIconColor = (status: string) => {
-    return status === 'Online' ? '#4caf50' : '#f44336';
+    return status === 'active' ? '#4caf50' : '#f44336';
   };
   
-  if (!station) {
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="80vh">
+        <CircularProgress size={60} sx={{ color: '#901340' }} />
+      </Box>
+    );
+  }
+
+  if (error || !station) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <Alert severity="error">Station not found</Alert>
+        <Alert severity="error">{error || 'Station not found'}</Alert>
       </Box>
     );
   }
@@ -213,14 +373,7 @@ export default function StationDetails() {
             Back to Stations
           </Button>
 
-          <Button
-            variant="outlined"
-            startIcon={<CalendarMonth />}
-            onClick={applyDemoSelection}
-            sx={{ ml: 'auto', color: 'primary.main', borderColor: 'primary.main' }}
-          >
-            Load Demo Data
-          </Button>
+
         </Box>
       </motion.div>
       
@@ -256,8 +409,8 @@ export default function StationDetails() {
           {/* Station Image */}
           <Box
             component="img"
-            src={`https://picsum.photos/600/400?random=${stationId}`}
-            alt={station.name}
+            src={`https://picsum.photos/600/400?random=${station.station_name}`}
+            alt={station.station_name}
             sx={{
               width: { xs: '100%', md: '450px' },
               height: { xs: '250px', md: '320px' },
@@ -278,11 +431,11 @@ export default function StationDetails() {
                   fontSize: { xs: '1.75rem', sm: '2.25rem', md: '2.75rem' }
                 }}
               >
-                {station.name}
+                {station.station_name}
               </Typography>
               <Chip
                 icon={<CircleIcon sx={{ fontSize: 16 }} />}
-                label={station.status}
+                label={station.status.charAt(0).toUpperCase() + station.status.slice(1)}
                 color={getStatusColor(station.status)}
                 sx={{ 
                   fontWeight: 600,
@@ -290,13 +443,13 @@ export default function StationDetails() {
                   px: 1.5,
                   py: 2.5,
                   backgroundColor: 'white',
-                  color: station.status === 'Online' ? '#4caf50' : '#f44336',
+                  color: station.status === 'active' ? '#4caf50' : '#f44336',
                 }}
               />
             </Box>
             
             <Typography variant="h6" sx={{ mb: 3, opacity: 0.95, fontSize: { xs: '1rem', md: '1.15rem' } }}>
-              📍 {station.area}
+              📍 {station.location || 'ASU Campus'}
             </Typography>
             
             <Typography variant="body1" paragraph sx={{ lineHeight: 1.8, mb: 3, opacity: 0.9 }}>
@@ -314,20 +467,22 @@ export default function StationDetails() {
               backdropFilter: 'blur(10px)',
             }}>
               <Box>
-                <Typography variant="body2" sx={{ opacity: 0.8 }}>Daily Capacity</Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>500-800 L</Typography>
+                <Typography variant="body2" sx={{ opacity: 0.8 }}>Unit Type</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>{station.unit}</Typography>
               </Box>
               <Box>
-                <Typography variant="body2" sx={{ opacity: 0.8 }}>Efficiency</Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>85-92%</Typography>
+                <Typography variant="body2" sx={{ opacity: 0.8 }}>Total Readings</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>{station.metadata.total_readings}</Typography>
               </Box>
               <Box>
-                <Typography variant="body2" sx={{ opacity: 0.8 }}>Energy Source</Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>Solar + Grid</Typography>
+                <Typography variant="body2" sx={{ opacity: 0.8 }}>Available Fields</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>{station.metadata.available_fields.length}</Typography>
               </Box>
               <Box>
-                <Typography variant="body2" sx={{ opacity: 0.8 }}>Serving</Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>~2,500 people</Typography>
+                <Typography variant="body2" sx={{ opacity: 0.8 }}>Last Updated</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                  {station.metadata.last_reading ? format(new Date(station.metadata.last_reading), 'MMM dd, HH:mm') : 'N/A'}
+                </Typography>
               </Box>
             </Box>
           </Box>
@@ -505,7 +660,7 @@ export default function StationDetails() {
                   </Typography>
                 <Typography sx={{ fontWeight: 600, fontSize: '0.95rem', textAlign: 'left' }}>
                   {selectedUnit && selectedCategory && selectedParameters.length > 0
-                    ? (station?.units && station.units.length > 0 
+                    ? (station?.unit
                         ? `${selectedUnit} • ${selectedCategory} • ${selectedParameters.join(', ')}`
                         : `${selectedCategory} • ${selectedParameters.join(', ')}`)
                     : 'Select Parameters'}
@@ -529,14 +684,286 @@ export default function StationDetails() {
             feature={`${selectedCategory} - ${selectedParameters.join(', ')}` as FeatureType}
             startDate={format(startDate, 'yyyy-MM-dd')}
             endDate={format(endDate, 'yyyy-MM-dd')}
+            paramNames={selectedParameters.map(p => fieldDisplayNames[p] || p)}
           />
-          
-          <CSVExport
-            data={filteredData}
-            feature={`${selectedCategory} - ${selectedParameters.join(', ')}` as FeatureType}
-            stationName={station.name}
-            dateRange={dateRangeString}
-          />
+        </motion.div>
+      )}
+      
+      {/* Data Download Section */}
+      {startDate && endDate && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.4 }}
+        >
+          <Paper 
+            elevation={0} 
+            sx={{ 
+              p: { xs: 2.5, md: 4 }, 
+              mt: 3,
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 3,
+              background: 'rgba(255, 255, 255, 0.8)',
+              backdropFilter: 'blur(10px)',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.06)',
+            }}
+          >
+            <Typography 
+              variant="h4" 
+              gutterBottom 
+              sx={{ 
+                fontWeight: 700,
+                color: '#1e88e5',
+                mb: 4,
+                fontSize: { xs: '1.5rem', md: '2rem' }
+              }}
+            >
+              📥 Data Download
+            </Typography>
+            
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3 }}>
+              {/* Raw Data Download */}
+              <Paper
+                elevation={0}
+                sx={{
+                  flex: 1,
+                  p: 3,
+                  border: '2px solid #e3f2fd',
+                  borderRadius: 2,
+                  '&:hover': { borderColor: '#1e88e5' },
+                  transition: 'border-color 0.3s',
+                }}
+              >
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#1565c0', mb: 1 }}>
+                  Raw Data
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Download all raw sensor readings for the selected date range. One row per reading (~1/min). Select which variables to include.
+                </Typography>
+                
+                {/* Variable selection for raw download */}
+                <Box sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+                      Select Variables
+                    </Typography>
+                    <Button 
+                      size="small" 
+                      onClick={() => {
+                        if (rawDownloadFields.length === availableFields.filter(f => fieldDisplayNames[f]).length) {
+                          setRawDownloadFields([]);
+                        } else {
+                          setRawDownloadFields(availableFields.filter(f => fieldDisplayNames[f]));
+                        }
+                      }}
+                      sx={{ textTransform: 'none', fontWeight: 600, fontSize: '0.8rem' }}
+                    >
+                      {rawDownloadFields.length === availableFields.filter(f => fieldDisplayNames[f]).length ? 'Deselect All' : 'Select All'}
+                    </Button>
+                  </Box>
+                  <Box sx={{ 
+                    display: 'flex', 
+                    flexWrap: 'wrap', 
+                    gap: 0.75,
+                    maxHeight: '160px',
+                    overflowY: 'auto',
+                    p: 1,
+                    backgroundColor: '#f8f9fa',
+                    borderRadius: 1.5,
+                  }}>
+                    {availableFields.filter(f => fieldDisplayNames[f]).map(field => (
+                      <Chip
+                        key={field}
+                        label={fieldDisplayNames[field]}
+                        size="small"
+                        onClick={() => {
+                          setRawDownloadFields(prev => 
+                            prev.includes(field) ? prev.filter(f => f !== field) : [...prev, field]
+                          );
+                        }}
+                        sx={{
+                          fontWeight: rawDownloadFields.includes(field) ? 600 : 400,
+                          backgroundColor: rawDownloadFields.includes(field) ? '#1e88e5' : 'white',
+                          color: rawDownloadFields.includes(field) ? 'white' : 'text.primary',
+                          border: '1px solid',
+                          borderColor: rawDownloadFields.includes(field) ? '#1e88e5' : '#ddd',
+                          cursor: 'pointer',
+                          '&:hover': { 
+                            backgroundColor: rawDownloadFields.includes(field) ? '#1565c0' : '#e3f2fd',
+                          },
+                        }}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+
+                <Button
+                  variant="contained"
+                  fullWidth
+                  startIcon={rawDownloading ? <CircularProgress size={18} color="inherit" /> : <Download />}
+                  disabled={rawDownloadFields.length === 0 || rawDownloading}
+                  onClick={async () => {
+                    setRawDownloading(true);
+                    try {
+                      const resp = await apiClient.getStationReadings(stationName, {
+                        start_date: startDate!.toISOString(),
+                        end_date: endDate!.toISOString(),
+                        fields: rawDownloadFields,
+                        limit: 10000,
+                      });
+                      const exportData = resp.data.map(r => {
+                        const row: Record<string, unknown> = {
+                          station_name: r.station_name,
+                          timestamp: r.timestamp,
+                        };
+                        rawDownloadFields.forEach(f => {
+                          row[fieldDisplayNames[f] || f] = r[f as keyof typeof r];
+                        });
+                        return row;
+                      });
+                      const csv = Papa.unparse(exportData);
+                      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                      const link = document.createElement('a');
+                      link.href = URL.createObjectURL(blob);
+                      link.download = `${station.station_name}_raw_${format(startDate!, 'yyyyMMdd')}-${format(endDate!, 'yyyyMMdd')}.csv`;
+                      link.click();
+                    } catch (err) {
+                      console.error('Raw download failed:', err);
+                    } finally {
+                      setRawDownloading(false);
+                    }
+                  }}
+                  sx={{
+                    background: 'linear-gradient(135deg, #4caf50 0%, #388e3c 100%)',
+                    fontWeight: 600,
+                    py: 1.5,
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #43a047 0%, #2e7d32 100%)',
+                    }
+                  }}
+                >
+                  {rawDownloading ? 'Downloading...' : `Download Raw CSV (${rawDownloadFields.length} variables)`}
+                </Button>
+              </Paper>
+
+              {/* Hourly Aggregated Data Download */}
+              <Paper
+                elevation={0}
+                sx={{
+                  flex: 1,
+                  p: 3,
+                  border: '2px solid #fce4ec',
+                  borderRadius: 2,
+                  '&:hover': { borderColor: '#901340' },
+                  transition: 'border-color 0.3s',
+                }}
+              >
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#901340', mb: 1 }}>
+                  Hourly Aggregated Data
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Hourly mean &amp; standard deviation for all sensor parameters, plus calculated fields: energy consumption (kWh/L), water production per hour, absolute humidity.
+                </Typography>
+                
+                <Box sx={{ mb: 2, p: 2, backgroundColor: '#f8f9fa', borderRadius: 1.5 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.secondary', mb: 1 }}>
+                    Includes per hour:
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {[
+                      'Temperature (mean/std)',
+                      'Humidity (mean/std)',
+                      'Velocity (mean/std)',
+                      'Outtake Temp (mean/std)',
+                      'Outtake Humidity (mean/std)',
+                      'Outtake Velocity (mean/std)',
+                      'Power (mean/std)',
+                      'Abs Humidity Intake',
+                      'Abs Humidity Outtake',
+                      'Water Produced (g, L)',
+                      'Energy Consumed (kWh)',
+                      'Energy/Liter (kWh/L)',
+                    ].map(label => (
+                      <Chip key={label} label={label} size="small" 
+                        sx={{ fontSize: '0.7rem', backgroundColor: '#fce4ec', color: '#901340', fontWeight: 500 }} 
+                      />
+                    ))}
+                  </Box>
+                </Box>
+
+                <Button
+                  variant="contained"
+                  fullWidth
+                  startIcon={hourlyDownloading ? <CircularProgress size={18} color="inherit" /> : <Download />}
+                  disabled={hourlyDownloading}
+                  onClick={async () => {
+                    setHourlyDownloading(true);
+                    try {
+                      const resp = await apiClient.getHourlyAggregation(stationName, {
+                        start_date: startDate!.toISOString(),
+                        end_date: endDate!.toISOString(),
+                      });
+                      const exportData = resp.data.map(row => ({
+                        'Hour': row.hour,
+                        'Reading Count': row.reading_count,
+                        'Temperature Mean (°C)': row.temperature_mean,
+                        'Temperature Std': row.temperature_std,
+                        'Humidity Mean (%)': row.humidity_mean,
+                        'Humidity Std': row.humidity_std,
+                        'Velocity Mean (m/s)': row.velocity_mean,
+                        'Velocity Std': row.velocity_std,
+                        'Outtake Temperature Mean (°C)': row.outtake_temperature_mean,
+                        'Outtake Temperature Std': row.outtake_temperature_std,
+                        'Outtake Humidity Mean (%)': row.outtake_humidity_mean,
+                        'Outtake Humidity Std': row.outtake_humidity_std,
+                        'Outtake Velocity Mean (m/s)': row.outtake_velocity_mean,
+                        'Outtake Velocity Std': row.outtake_velocity_std,
+                        'Power Mean (W)': row.power_mean,
+                        'Power Std': row.power_std,
+                        'Current Mean (A)': row.current_mean,
+                        'Current Std': row.current_std,
+                        'Voltage Mean (V)': row.voltage_mean,
+                        'Voltage Std': row.voltage_std,
+                        'Abs Humidity Intake Mean (g/m³)': row.abs_humidity_intake_mean,
+                        'Abs Humidity Intake Std': row.abs_humidity_intake_std,
+                        'Abs Humidity Outtake Mean (g/m³)': row.abs_humidity_outtake_mean,
+                        'Abs Humidity Outtake Std': row.abs_humidity_outtake_std,
+                        'Water Produced (g)': row.water_produced_g,
+                        'Water Produced (L)': row.water_produced_L,
+                        'Energy Consumed (kWh)': row.energy_consumed_kWh,
+                        'Energy per Liter (kWh/L)': row.energy_per_liter_kWh_L,
+                      }));
+                      const csv = Papa.unparse(exportData);
+                      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                      const link = document.createElement('a');
+                      link.href = URL.createObjectURL(blob);
+                      link.download = `${station.station_name}_hourly_${format(startDate!, 'yyyyMMdd')}-${format(endDate!, 'yyyyMMdd')}.csv`;
+                      link.click();
+                    } catch (err) {
+                      console.error('Hourly download failed:', err);
+                    } finally {
+                      setHourlyDownloading(false);
+                    }
+                  }}
+                  sx={{
+                    background: 'linear-gradient(135deg, #901340 0%, #6a0f30 100%)',
+                    fontWeight: 600,
+                    py: 1.5,
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #7b1038 0%, #5a0d28 100%)',
+                    }
+                  }}
+                >
+                  {hourlyDownloading ? 'Downloading...' : 'Download Hourly CSV'}
+                </Button>
+              </Paper>
+            </Box>
+          </Paper>
         </motion.div>
       )}
 
@@ -734,70 +1161,10 @@ export default function StationDetails() {
         </DialogTitle>
         <DialogContent sx={{ pt: 5, pb: 4, px: 4 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {/* Unit Selector - Only show if station has units */}
-            {station?.units && station.units.length > 0 && (
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600, color: 'text.secondary', fontSize: '0.875rem' }}>
-                  UNIT
-                </Typography>
-                <FormControl fullWidth size="medium">
-                  <InputLabel>Select Unit</InputLabel>
-                  <Select
-                    value={tempUnit}
-                    label="Select Unit"
-                    onChange={(e) => setTempUnit(e.target.value)}
-                    MenuProps={{
-                      PaperProps: {
-                        sx: {
-                          maxHeight: 300,
-                          mt: 1,
-                          boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
-                          borderRadius: 2,
-                        }
-                      }
-                    }}
-                    sx={{
-                      backgroundColor: '#f8f9fa',
-                      borderRadius: 2,
-                      '&:hover': {
-                        backgroundColor: '#e9ecef'
-                      },
-                      '&.Mui-focused': {
-                        backgroundColor: 'white'
-                      }
-                    }}
-                  >
-                    {station.units.map((unit) => (
-                      <MenuItem 
-                        key={unit} 
-                        value={unit}
-                        sx={{
-                          py: 1.5,
-                          px: 2.5,
-                          fontSize: '1rem',
-                          '&:hover': {
-                            backgroundColor: '#e3f2fd'
-                          },
-                          '&.Mui-selected': {
-                            backgroundColor: '#bbdefb',
-                            fontWeight: 600,
-                            '&:hover': {
-                              backgroundColor: '#90caf9'
-                            }
-                          }
-                        }}
-                      >
-                        {unit}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Box>
-            )}
-            
+            {/* Category Selector */}
             <Box>
               <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600, color: 'text.secondary', fontSize: '0.875rem' }}>
-                CATEGORY
+                PARAMETER CATEGORY
               </Typography>
               <FormControl fullWidth size="medium">
                 <InputLabel>Select Category</InputLabel>
@@ -854,51 +1221,78 @@ export default function StationDetails() {
             </Box>
 
             <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600, color: 'text.secondary', fontSize: '0.875rem' }}>
-                PARAMETERS (Select up to 2)
-              </Typography>
-              <Paper 
-                sx={{ 
-                  p: 2,
-                  backgroundColor: '#f8f9fa',
-                  borderRadius: 2,
-                  maxHeight: 250,
-                  overflow: 'auto'
-                }}
-              >
-                <FormGroup>
-                  {tempCategory && parameterCategories[tempCategory as keyof typeof parameterCategories]?.map((param) => (
-                    <FormControlLabel
-                      key={param}
-                      control={
-                        <Checkbox
-                          checked={tempParameters.includes(param)}
-                          onChange={() => handleParameterToggle(param)}
-                          disabled={!tempParameters.includes(param) && tempParameters.length >= 2}
-                          sx={{
-                            color: '#1e88e5',
-                            '&.Mui-checked': {
-                              color: '#1e88e5',
-                            }
-                          }}
-                        />
-                      }
-                      label={param}
-                      sx={{
-                        '& .MuiFormControlLabel-label': {
-                          fontSize: '1rem',
-                          fontWeight: tempParameters.includes(param) ? 600 : 400,
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.875rem' }}>
+                  SELECT PARAMETERS (MAX 2)
+                </Typography>
+                <Chip 
+                  label={`${tempParameters.length}/2 selected`}
+                  size="small"
+                  sx={{ 
+                    fontWeight: 600,
+                    backgroundColor: tempParameters.length === 2 ? '#4caf50' : '#e3f2fd',
+                    color: tempParameters.length === 2 ? 'white' : '#1565c0'
+                  }}
+                />
+              </Box>
+              
+              {tempCategory && parameterCategories[tempCategory] && parameterCategories[tempCategory].length > 0 ? (
+                <Box sx={{ 
+                  backgroundColor: '#f8f9fa', 
+                  borderRadius: 2, 
+                  p: 2.5,
+                  maxHeight: '350px',
+                  overflowY: 'auto'
+                }}>
+                  <FormGroup>
+                    {parameterCategories[tempCategory].map((param) => (
+                      <FormControlLabel
+                        key={param}
+                        control={
+                          <Checkbox
+                            checked={tempParameters.includes(param)}
+                            onChange={() => handleParameterToggle(param)}
+                            disabled={!tempParameters.includes(param) && tempParameters.length >= 2}
+                            sx={{
+                              color: '#1565c0',
+                              '&.Mui-checked': {
+                                color: '#1565c0',
+                              },
+                              '&.Mui-disabled': {
+                                color: '#ccc',
+                              }
+                            }}
+                          />
                         }
-                      }}
-                    />
-                  ))}
-                </FormGroup>
-                {!tempCategory && (
-                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
-                    Please select a category first
-                  </Typography>
-                )}
-              </Paper>
+                        label={fieldDisplayNames[param] || param}
+                        sx={{
+                          py: 1,
+                          px: 2,
+                          borderRadius: 1.5,
+                          mb: 1,
+                          backgroundColor: tempParameters.includes(param) ? '#e3f2fd' : 'white',
+                          border: '1px solid',
+                          borderColor: tempParameters.includes(param) ? '#1565c0' : '#e0e0e0',
+                          transition: 'all 0.2s',
+                          '&:hover': {
+                            backgroundColor: tempParameters.includes(param) ? '#bbdefb' : '#f5f5f5',
+                            transform: 'translateX(4px)',
+                          },
+                          '& .MuiFormControlLabel-label': {
+                            fontSize: '0.95rem',
+                            fontWeight: tempParameters.includes(param) ? 600 : 400,
+                            color: tempParameters.includes(param) ? '#1565c0' : 'text.primary',
+                          }
+                        }}
+                      />
+                    ))}
+                  </FormGroup>
+                </Box>
+              ) : (
+                <Alert severity="info" sx={{ borderRadius: 2 }}>
+                  {tempCategory ? 'No parameters available for this category' : 'Please select a category first'}
+                </Alert>
+              )}
             </Box>
           </Box>
         </DialogContent>
