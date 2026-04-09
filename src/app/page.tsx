@@ -3,13 +3,12 @@
 import React, { useEffect, useState } from 'react';
 import { Typography, Box, Fade, Link as MuiLink, CircularProgress, Alert } from '@mui/material';
 import StationCard from '@/components/StationCard';
-import { apiClient, type StationInfo, type SystemStats } from '@/lib/api-client';
+import { apiClient, type StationInfo } from '@/lib/api-client';
 
 export default function Home() {
   const [stations, setStations] = useState<StationInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sysStats, setSysStats] = useState<SystemStats | null>(null);
 
   useEffect(() => {
     async function fetchStations() {
@@ -26,17 +25,7 @@ export default function Home() {
       }
     }
 
-    async function fetchStats() {
-      try {
-        const stats = await apiClient.getStats();
-        setSysStats(stats);
-      } catch (err) {
-        console.error('Failed to fetch system stats:', err);
-      }
-    }
-
     fetchStations();
-    fetchStats();
   }, []);
 
   // Map API data to StationCard format
@@ -235,99 +224,244 @@ export default function Home() {
         <Box sx={{ flex: 1, height: '2px', background: 'linear-gradient(to right, transparent, #901340, transparent)' }} />
       </Box>
 
-      {/* Stats Grid */}
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)', md: 'repeat(6, 1fr)' },
-          gap: 2,
-          mb: 8,
+      {/* Stats Row - Horizontal Scrolling */}
+      <Box 
+        sx={{ 
+          mt: 8,
+          overflow: 'hidden',
+          position: 'relative',
+          '&::before, &::after': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            width: '100px',
+            zIndex: 2,
+            pointerEvents: 'none',
+          },
+          '&::before': {
+            left: 0,
+            background: 'linear-gradient(to right, #fafafa, transparent)',
+          },
+          '&::after': {
+            right: 0,
+            background: 'linear-gradient(to left, #fafafa, transparent)',
+          }
         }}
       >
-        {[
-          {
-            value: sysStats ? sysStats.stations_monitored.toString() : stations.length.toString(),
-            label: 'Stations Monitored',
-            color: '#901340',
-          },
-          {
-            value: sysStats
-              ? sysStats.total_data_points >= 1000
-                ? `${(sysStats.total_data_points / 1000).toFixed(1)}K`
-                : sysStats.total_data_points.toString()
-              : '—',
-            label: 'Data Points Ingested',
-            color: '#ffcb25',
-          },
-          {
-            value: sysStats ? sysStats.api_endpoints.toString() : '—',
-            label: 'API Endpoints',
-            color: '#901340',
-          },
-          {
-            value: '14',
-            label: 'Parameters Tracked',
-            color: '#ffcb25',
-          },
-          {
-            value: sysStats ? sysStats.uptime : '—',
-            label: 'API Uptime',
-            color: '#901340',
-          },
-          {
-            value: sysStats
-              ? sysStats.latest_reading
-                ? new Date(sysStats.latest_reading).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                : '—'
-              : '—',
-            label: 'Latest Reading',
-            color: '#ffcb25',
-          },
-        ].map((stat, i) => (
-          <Box
-            key={i}
-            sx={{
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 3,
+            animation: 'scroll 20s linear infinite',
+            '@keyframes scroll': {
+              '0%': {
+                transform: 'translateX(0)',
+              },
+              '100%': {
+                transform: 'translateX(-50%)',
+              },
+            },
+            '&:hover': {
+              animationPlayState: 'paused',
+            }
+          }}
+        >
+          {/* First set of stats */}
+          <Box 
+            sx={{ 
               textAlign: 'center',
-              p: { xs: 2.5, md: 3 },
+              p: 4,
+              minWidth: '280px',
               background: '#ffffff',
               borderRadius: 2,
-              border: `2px solid ${stat.color}`,
+              border: '2px solid #901340',
               boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-              transition: 'all 0.25s ease',
+              transition: 'all 0.3s ease',
               '&:hover': {
-                boxShadow: `0 6px 20px ${stat.color}30`,
-                transform: 'translateY(-3px)',
-              },
+                boxShadow: '0 4px 16px rgba(144, 19, 64, 0.12)',
+                transform: 'translateY(-2px)'
+              }
             }}
           >
-            <Typography
-              sx={{
-                fontWeight: 700,
-                color: stat.color,
-                fontSize: { xs: '1.5rem', md: '1.8rem' },
-                lineHeight: 1.2,
-                mb: 1,
-                wordBreak: 'break-word',
-              }}
-            >
-              {stat.value}
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#901340', mb: 1.5, fontSize: '2.5rem' }}>
+              {stations.length}
             </Typography>
-            <Typography
-              variant="caption"
-              sx={{
-                color: '#484848',
-                fontWeight: 600,
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                fontSize: '0.7rem',
-              }}
-            >
-              {stat.label}
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Active Stations
             </Typography>
           </Box>
-        ))}
-      </Box>
+          
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #ffcb25',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(255, 203, 37, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#ffcb25', mb: 1.5, fontSize: '2.5rem' }}>
+              12+
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Parameters Tracked
+            </Typography>
+          </Box>
 
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #901340',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(144, 19, 64, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#901340', mb: 1.5, fontSize: '2.5rem' }}>
+              24/7
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Real-time Monitoring
+            </Typography>
+          </Box>
+
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #ffcb25',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(255, 203, 37, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#ffcb25', mb: 1.5, fontSize: '2.5rem' }}>
+              100%
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Sustainable Water
+            </Typography>
+          </Box>
+
+          {/* Duplicate set for seamless loop */}
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #901340',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(144, 19, 64, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#901340', mb: 1.5, fontSize: '2.5rem' }}>
+              {stations.length}
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Active Stations
+            </Typography>
+          </Box>
+          
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #ffcb25',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(255, 203, 37, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#ffcb25', mb: 1.5, fontSize: '2.5rem' }}>
+              12+
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Parameters Tracked
+            </Typography>
+          </Box>
+
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #901340',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(144, 19, 64, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#901340', mb: 1.5, fontSize: '2.5rem' }}>
+              24/7
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Real-time Monitoring
+            </Typography>
+          </Box>
+
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #ffcb25',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(255, 203, 37, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#ffcb25', mb: 1.5, fontSize: '2.5rem' }}>
+              100%
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Sustainable Water
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
       </Box>
     </Box>
   );
