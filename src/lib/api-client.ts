@@ -74,6 +74,19 @@ export interface HealthResponse {
   services: Record<string, string>;
 }
 
+export interface SystemStats {
+  uptime: string;
+  uptime_seconds: number;
+  stations_monitored: number;
+  station_names: string[];
+  total_data_points: number;
+  api_endpoints: number;
+  latest_reading: string | null;
+  oldest_reading: string | null;
+  firestore_status: string;
+  api_version: string;
+}
+
 class APIClient {
   private baseURL: string;
 
@@ -120,6 +133,13 @@ class APIClient {
    */
   async health(): Promise<HealthResponse> {
     return this.fetch<HealthResponse>('/health');
+  }
+
+  /**
+   * System-wide statistics
+   */
+  async getStats(): Promise<SystemStats> {
+    return this.fetch<SystemStats>('/stats');
   }
 
   /**
