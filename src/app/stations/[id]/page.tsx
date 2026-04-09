@@ -38,35 +38,56 @@ const fieldDisplayNames: Record<string, string> = {
   temperature: 'Temperature',
   humidity: 'Relative Humidity',
   velocity: 'Air Velocity',
+  abs_humidity_intake: 'Abs Humidity Intake (g/m³)',
   outtake_humidity: 'Outtake Humidity',
   outtake_velocity: 'Outtake Velocity',
   outtake_temperature: 'Outtake Temperature',
+  abs_humidity_outtake: 'Abs Humidity Outtake (g/m³)',
   flow_lmin: 'Flow Rate (L/min)',
   flow_hz: 'Flow Rate (Hz)',
   flow_total: 'Total Flow',
-  weight: 'Amount of Water',
+  weight: 'Weight (g)',
+  accumulated_water_L: 'Accumulated Water Production (L)',
+  incremental_water_g: 'Incremental Water Production (g)',
   power: 'Power',
   voltage: 'Voltage',
   current: 'Current',
-  energy: 'Energy',
+  energy: 'Energy (Wh)',
+  incremental_energy_Wh: 'Incremental Energy (Wh)',
+  pump_status: 'Pump Status',
 };
+
+// Computed fields — derived client-side from base readings
+const COMPUTED_FIELDS = new Set([
+  'abs_humidity_intake',
+  'abs_humidity_outtake',
+  'accumulated_water_L',
+  'incremental_water_g',
+  'incremental_energy_Wh',
+]);
 
 // Field categories for grouping
 const fieldCategories: Record<string, string> = {
   temperature: 'Intake Air',
   humidity: 'Intake Air',
   velocity: 'Intake Air',
+  abs_humidity_intake: 'Intake Air',
   outtake_humidity: 'Outtake Air',
   outtake_velocity: 'Outtake Air',
   outtake_temperature: 'Outtake Air',
+  abs_humidity_outtake: 'Outtake Air',
   flow_lmin: 'Water Production',
   flow_hz: 'Water Production',
   flow_total: 'Water Production',
   weight: 'Water Production',
+  accumulated_water_L: 'Water Production',
+  incremental_water_g: 'Water Production',
   power: 'Power Consumption',
   voltage: 'Power Consumption',
   current: 'Power Consumption',
   energy: 'Power Consumption',
+  incremental_energy_Wh: 'Power Consumption',
+  pump_status: 'System',
 };
 
 export default function StationDetails() {
@@ -128,8 +149,12 @@ export default function StationDetails() {
         
         setStation(foundStation);
         setAvailableFields(foundStation.metadata.available_fields);
-        // Pre-select all fields for raw download
-        setRawDownloadFields(foundStation.metadata.available_fields.filter(f => fieldDisplayNames[f]));
+        // Pre-select all fields for raw download (Firestore fields + computed fields)
+        const computedFieldList = Array.from(COMPUTED_FIELDS);
+        setRawDownloadFields([
+          ...foundStation.metadata.available_fields.filter(f => fieldDisplayNames[f]),
+          ...computedFieldList,
+        ]);
         
         // Get initial readings (last 7 days)
         const readingsResponse = await apiClient.getStationReadings(stationName, {
@@ -751,15 +776,19 @@ export default function StationDetails() {
                     <Button 
                       size="small" 
                       onClick={() => {
-                        if (rawDownloadFields.length === availableFields.filter(f => fieldDisplayNames[f]).length) {
+                        const allFields = [
+                          ...availableFields.filter(f => fieldDisplayNames[f]),
+                          ...Array.from(COMPUTED_FIELDS),
+                        ];
+                        if (rawDownloadFields.length === allFields.length) {
                           setRawDownloadFields([]);
                         } else {
-                          setRawDownloadFields(availableFields.filter(f => fieldDisplayNames[f]));
+                          setRawDownloadFields(allFields);
                         }
                       }}
                       sx={{ textTransform: 'none', fontWeight: 600, fontSize: '0.8rem' }}
                     >
-                      {rawDownloadFields.length === availableFields.filter(f => fieldDisplayNames[f]).length ? 'Deselect All' : 'Select All'}
+                      {rawDownloadFields.length === [...availableFields.filter(f => fieldDisplayNames[f]), ...Array.from(COMPUTED_FIELDS)].length ? 'Deselect All' : 'Select All'}
                     </Button>
                   </Box>
                   <Box sx={{ 
@@ -772,7 +801,7 @@ export default function StationDetails() {
                     backgroundColor: '#f8f9fa',
                     borderRadius: 1.5,
                   }}>
-                    {availableFields.filter(f => fieldDisplayNames[f]).map(field => (
+                    {[...availableFields.filter(f => fieldDisplayNames[f]), ...Array.from(COMPUTED_FIELDS)].map(field => (
                       <Chip
                         key={field}
                         label={fieldDisplayNames[field]}
@@ -806,21 +835,78 @@ export default function StationDetails() {
                   onClick={async () => {
                     setRawDownloading(true);
                     try {
+                      // Base fields needed for computation (always fetch these if any computed field is selected)
+                      const COMPUTE_DEPS = ['temperature', 'humidity', 'outtake_temperature', 'outtake_humidity', 'weight', 'energy'];
+                      const selectedRaw = rawDownloadFields.filter(f => !COMPUTED_FIELDS.has(f));
+                      const needsComputed = rawDownloadFields.some(f => COMPUTED_FIELDS.has(f));
+                      // Fetch all base fields + dependencies (no server-side filter when computed fields selected)
+                      const fieldsToFetch = needsComputed
+                        ? [...new Set([...selectedRaw, ...COMPUTE_DEPS])]
+                        : selectedRaw;
+
                       const resp = await apiClient.getStationReadings(stationName, {
                         start_date: startDate!.toISOString(),
                         end_date: endDate!.toISOString(),
-                        fields: rawDownloadFields,
+                        fields: fieldsToFetch,
                         limit: 10000,
                       });
-                      const exportData = resp.data.map(r => {
-                        const row: Record<string, unknown> = {
+
+                      // Sort ascending for temporal computations
+                      const sorted = [...resp.data].sort((a, b) =>
+                        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+                      );
+
+                      // Helper: Magnus formula for absolute humidity (g/m³)
+                      const absHumidity = (tempC: number, rhPct: number) => {
+                        const es = 6.112 * Math.exp((17.67 * tempC) / (tempC + 243.5));
+                        return Math.round((216.7 * (rhPct / 100.0) * es) / (273.15 + tempC) * 10000) / 10000;
+                      };
+
+                      // Compute derived fields row-by-row
+                      let accumulatedWaterG = 0;
+                      let prevWeight: number | null = null;
+                      let prevEnergy: number | null = null;
+
+                      const enriched = sorted.map(r => {
+                        const row: Record<string, unknown> = { ...r };
+
+                        // Absolute humidity (intake)
+                        if (typeof r.temperature === 'number' && typeof r.humidity === 'number') {
+                          row.abs_humidity_intake = absHumidity(r.temperature, r.humidity);
+                        }
+                        // Absolute humidity (outtake)
+                        if (typeof r.outtake_temperature === 'number' && typeof r.outtake_humidity === 'number') {
+                          row.abs_humidity_outtake = absHumidity(r.outtake_temperature, r.outtake_humidity);
+                        }
+                        // Incremental water (only positive deltas — never subtract)
+                        const w = r.weight as number | null | undefined;
+                        if (typeof w === 'number') {
+                          const incr = prevWeight !== null ? Math.max(w - prevWeight, 0) : 0;
+                          row.incremental_water_g = incr;
+                          accumulatedWaterG += incr;
+                          row.accumulated_water_L = Math.round(accumulatedWaterG / 1000 * 1000000) / 1000000;
+                          prevWeight = w;
+                        }
+                        // Incremental energy (only positive deltas)
+                        const e = r.energy as number | null | undefined;
+                        if (typeof e === 'number') {
+                          row.incremental_energy_Wh = prevEnergy !== null ? Math.max(e - prevEnergy, 0) : 0;
+                          prevEnergy = e;
+                        }
+
+                        return row;
+                      });
+
+                      // Build CSV with user-selected columns only
+                      const exportData = enriched.map(r => {
+                        const csvRow: Record<string, unknown> = {
                           station_name: r.station_name,
                           timestamp: r.timestamp,
                         };
                         rawDownloadFields.forEach(f => {
-                          row[fieldDisplayNames[f] || f] = r[f as keyof typeof r];
+                          csvRow[fieldDisplayNames[f] || f] = r[f];
                         });
-                        return row;
+                        return csvRow;
                       });
                       const csv = Papa.unparse(exportData);
                       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
