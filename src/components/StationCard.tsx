@@ -65,25 +65,30 @@ const StationCard: React.FC<StationCardProps> = ({ station }) => {
         }}
       />
       <CardContent sx={{ flexGrow: 1, p: 3 }}>
-        <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
+        <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2} gap={1}>
           <Typography 
-            variant="h5" 
+            variant="body1" 
             component="h2" 
             sx={{
               color: '#1e88e5',
-              fontWeight: 600,
+              fontWeight: 700,
+              fontSize: '0.95rem',
+              flex: 1,
+              minWidth: 0,
+              wordBreak: 'break-word',
             }}
           >
             {station.name}
           </Typography>
           <Chip
-            label={station.status}
+            label={station.status.toUpperCase()}
             color={getStatusColor(station.status)}
             size="small"
             icon={<CircleIcon sx={{ fontSize: 14 }} />}
             sx={{
               fontWeight: 600,
-              fontSize: '0.75rem'
+              fontSize: '0.75rem',
+              flexShrink: 0,
             }}
           />
         </Box>
@@ -100,19 +105,7 @@ const StationCard: React.FC<StationCardProps> = ({ station }) => {
           📍 {station.location || 'Location Unknown'}
         </Typography>
         
-        {station.units && station.units.length > 0 && (
-          <Typography 
-            variant="body2" 
-            sx={{
-              mb: 1.5,
-              color: '#555',
-              fontWeight: 500
-            }}
-          >
-            🔧 <strong>Unit:</strong> {station.units.join(', ')}
-          </Typography>
-        )}
-        
+
         <Typography 
           variant="body2" 
           color="text.secondary"

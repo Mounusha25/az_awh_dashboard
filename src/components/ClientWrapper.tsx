@@ -105,6 +105,7 @@ const ClientWrapper: React.FC<ClientWrapperProps> = ({ children }) => {
       <LocalizationProvider dateAdapter={AdapterDateFns}>
         <CssBaseline />
         <Box
+          suppressHydrationWarning
           sx={{
             display: 'flex',
             flexDirection: 'column',

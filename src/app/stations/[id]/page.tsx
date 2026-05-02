@@ -59,7 +59,7 @@ const fieldDisplayNames: Record<string, string> = {
   voltage: 'Voltage',
   current: 'Current',
   energy: 'Energy',
-  incremental_energy_Wh: 'Incremental Energy',
+  incremental_energy_kWh: 'Incremental Energy',
   pump_status: 'Pump Status',
 };
 
@@ -82,8 +82,8 @@ const fieldUnits: Record<string, string> = {
   power: 'W',
   voltage: 'V',
   current: 'A',
-  energy: 'Wh',
-  incremental_energy_Wh: 'Wh',
+  energy: 'kWh',
+  incremental_energy_kWh: 'kWh',
   pump_status: '',
 };
 
@@ -93,7 +93,7 @@ const COMPUTED_FIELDS = new Set([
   'abs_humidity_outtake',
   'accumulated_water_L',
   'incremental_water_g',
-  'incremental_energy_Wh',
+  'incremental_energy_kWh',
 ]);
 
 // Field categories for grouping
@@ -116,7 +116,7 @@ const fieldCategories: Record<string, string> = {
   voltage: 'Power Consumption',
   current: 'Power Consumption',
   energy: 'Power Consumption',
-  incremental_energy_Wh: 'Power Consumption',
+  incremental_energy_kWh: 'Power Consumption',
   pump_status: 'System',
 };
 
@@ -379,6 +379,19 @@ export default function StationDetails() {
       accWaterMap.set(r.timestamp, Math.round(runningWaterG / 1000 * 1000000) / 1000000);
     });
 
+    // Pre-compute incremental energy (kWh) per reading
+    const incEnergyMap = new Map<string, number>();
+    let prevE: number | null = null;
+    filteredReadings.forEach(r => {
+      const e = typeof r.energy === 'number' ? r.energy : null;
+      if (e !== null) {
+        incEnergyMap.set(r.timestamp, prevE !== null ? Math.max(e - prevE, 0) / 1000 : 0);
+        prevE = e;
+      } else {
+        incEnergyMap.set(r.timestamp, 0);
+      }
+    });
+
     // Helper: resolve a field value, computing derived fields on the fly if needed
     const resolveValue = (reading: StationReading, field: string): number => {
       if (field === 'abs_humidity_intake') {
@@ -391,6 +404,12 @@ export default function StationDetails() {
       }
       if (field === 'accumulated_water_L') {
         return accWaterMap.get(reading.timestamp) ?? 0;
+      }
+      if (field === 'incremental_energy_kWh') {
+        return incEnergyMap.get(reading.timestamp) ?? 0;
+      }
+      if (field === 'energy') {
+        return typeof reading.energy === 'number' ? reading.energy / 1000 : 0;
       }
       const v = reading[field as keyof StationReading];
       return typeof v === 'number' ? v : 0;
@@ -563,17 +582,13 @@ export default function StationDetails() {
             
             <Box sx={{ 
               display: 'grid', 
-              gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, 
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, 
               gap: 2,
               backgroundColor: 'rgba(255, 255, 255, 0.15)',
               borderRadius: 2,
               p: 2.5,
               backdropFilter: 'blur(10px)',
             }}>
-              <Box>
-                <Typography variant="body2" sx={{ opacity: 0.8 }}>Unit Type</Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>{station.unit}</Typography>
-              </Box>
               <Box>
                 <Typography variant="body2" sx={{ opacity: 0.8 }}>Total Readings</Typography>
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>{station.metadata.total_readings}</Typography>
@@ -763,10 +778,8 @@ export default function StationDetails() {
                     PARAMETERS
                   </Typography>
                 <Typography sx={{ fontWeight: 600, fontSize: '0.95rem', textAlign: 'left' }}>
-                  {selectedUnit && selectedCategory && selectedParameters.length > 0
-                    ? (station?.unit
-                        ? `${selectedUnit} • ${selectedCategory} • ${selectedParameters.join(', ')}`
-                        : `${selectedCategory} • ${selectedParameters.join(', ')}`)
+                  {selectedCategory && selectedParameters.length > 0
+                    ? `${selectedCategory} • ${selectedParameters.map(p => fieldDisplayNames[p] || p).join(' & ')}`
                     : 'Select Parameters'}
                 </Typography>
                 </Box>
@@ -970,7 +983,8 @@ export default function StationDetails() {
                         // Incremental energy (only positive deltas)
                         const e = r.energy as number | null | undefined;
                         if (typeof e === 'number') {
-                          row.incremental_energy_Wh = prevEnergy !== null ? Math.max(e - prevEnergy, 0) : 0;
+                          row.energy = Math.round(e / 1000 * 1000000) / 1000000; // convert Wh → kWh
+                          row.incremental_energy_kWh = prevEnergy !== null ? Math.round(Math.max(e - prevEnergy, 0) / 1000 * 1000000) / 1000000 : 0;
                           prevEnergy = e;
                         }
 

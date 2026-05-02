@@ -57,15 +57,14 @@ export default function Home() {
   }
 
   return (
-    <Box>
+    <Box sx={{ overflowX: 'hidden', width: '100%' }}>
       {/* Hero Section - Full Page */}
       <Box
         sx={{
           position: 'relative',
           height: 'calc(100vh - 80px)',
           minHeight: '600px',
-          width: '100vw',
-          marginLeft: 'calc(-50vw + 50%)',
+          width: '100%',
           backgroundImage: 'url(https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1600&q=80)',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
@@ -137,7 +136,7 @@ export default function Home() {
       </Box>
 
       {/* Stations Section */}
-      <Box sx={{ px: { xs: 2, sm: 3, md: 4 }, py: 6, maxWidth: '1400px', mx: 'auto' }}>
+      <Box sx={{ px: { xs: 2, sm: 3, md: 4 }, py: 6, maxWidth: '1400px', mx: 'auto', width: '100%', boxSizing: 'border-box' }}>
         <Typography 
           variant="h4" 
           component="h2" 
@@ -183,16 +182,16 @@ export default function Home() {
           gridTemplateColumns: {
             xs: '1fr',
             sm: 'repeat(2, 1fr)',
-            md: 'repeat(2, 1fr)',
+            md: 'repeat(3, 1fr)',
             lg: 'repeat(4, 1fr)',
           },
           gap: 3,
-          justifyItems: 'center',
+          width: '100%',
         }}
       >
         {stationCards.map((station, index) => (
           <Fade key={station.id} in={true} timeout={500 + index * 100}>
-            <Box sx={{ width: '100%', maxWidth: '380px', display: 'flex' }}>
+            <Box sx={{ width: '100%', minWidth: 0, display: 'flex' }}>
               <StationCard station={station} />
             </Box>
           </Fade>
@@ -285,10 +284,34 @@ export default function Home() {
             }}
           >
             <Typography variant="h3" sx={{ fontWeight: 700, color: '#901340', mb: 1.5, fontSize: '2.5rem' }}>
-              {stations.length}
+              {stationCards.length}
             </Typography>
             <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Active Stations
+              Total Stations
+            </Typography>
+          </Box>
+          
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #4caf50',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(76, 175, 80, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#4caf50', mb: 1.5, fontSize: '2.5rem' }}>
+              {stationCards.filter(s => s.status === 'Online').length}
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Online Now
             </Typography>
           </Box>
           
@@ -382,10 +405,34 @@ export default function Home() {
             }}
           >
             <Typography variant="h3" sx={{ fontWeight: 700, color: '#901340', mb: 1.5, fontSize: '2.5rem' }}>
-              {stations.length}
+              {stationCards.length}
             </Typography>
             <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Active Stations
+              Total Stations
+            </Typography>
+          </Box>
+          
+          <Box 
+            sx={{ 
+              textAlign: 'center',
+              p: 4,
+              minWidth: '280px',
+              background: '#ffffff',
+              borderRadius: 2,
+              border: '2px solid #4caf50',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 4px 16px rgba(76, 175, 80, 0.12)',
+                transform: 'translateY(-2px)'
+              }
+            }}
+          >
+            <Typography variant="h3" sx={{ fontWeight: 700, color: '#4caf50', mb: 1.5, fontSize: '2.5rem' }}>
+              {stationCards.filter(s => s.status === 'Online').length}
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#484848', fontWeight: 600, fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Online Now
             </Typography>
           </Box>
           

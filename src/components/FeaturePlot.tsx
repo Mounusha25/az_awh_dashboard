@@ -2,14 +2,14 @@
 
 import React from 'react';
 import {
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
 } from 'recharts';
 import { Box, Typography, Paper } from '@mui/material';
 import { FeatureType, ChartDataPoint } from '@/types';
@@ -102,19 +102,49 @@ const FeaturePlot: React.FC<FeaturePlotProps> = ({ data, feature, startDate, end
   };
 
   return (
-    <Paper elevation={3} sx={{ p: { xs: 2, sm: 3 }, mt: { xs: 2, sm: 3 } }}>
-      <Typography 
-        variant="h5" 
-        gutterBottom
-        sx={{
-          fontSize: { xs: '1.25rem', sm: '1.5rem', md: '1.75rem' },
-          fontWeight: 600,
-          color: '#b8336a',
-          mb: 3
-        }}
-      >
-        {feature} over Time ({startDate} - {endDate})
-      </Typography>
+    <Paper
+      elevation={0}
+      sx={{
+        p: { xs: 2.5, sm: 3.5 },
+        mt: { xs: 2, sm: 3 },
+        borderRadius: 3,
+        border: '1px solid rgba(30,136,229,0.15)',
+        background: 'linear-gradient(145deg, #ffffff 0%, #f8fbff 100%)',
+        boxShadow: '0 8px 32px rgba(30,136,229,0.08)',
+        overflow: 'hidden',
+        position: 'relative',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: '4px',
+          background: 'linear-gradient(90deg, #1e88e5, #e91e63)',
+          borderRadius: '3px 3px 0 0',
+        },
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3, flexWrap: 'wrap', gap: 1 }}>
+        <Box>
+          <Typography
+            variant="h5"
+            sx={{
+              fontSize: { xs: '1.1rem', sm: '1.35rem', md: '1.55rem' },
+              fontWeight: 700,
+              background: 'linear-gradient(90deg, #1e88e5, #b8336a)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              mb: 0.5,
+            }}
+          >
+            {feature}
+          </Typography>
+          <Typography variant="caption" sx={{ color: '#888', fontWeight: 500 }}>
+            {startDate} → {endDate} &nbsp;·&nbsp; {data.length.toLocaleString()} readings
+          </Typography>
+        </Box>
+      </Box>
       
       {data.length === 0 ? (
         <Box 
@@ -128,95 +158,118 @@ const FeaturePlot: React.FC<FeaturePlotProps> = ({ data, feature, startDate, end
           </Typography>
         </Box>
       ) : (
-        <Box sx={{ width: '100%', height: { xs: 400, sm: 500, md: 600, lg: 650 }, minHeight: 400 }}>
-          <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={400}>
-            <LineChart
+        <Box sx={{ width: '100%', height: { xs: 380, sm: 460, md: 520, lg: 560 }, minHeight: 380 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart
               data={plotData}
-              margin={{
-                top: 20,
-                right: hasSecondParam ? 60 : 30,
-                left: 20,
-                bottom: 60,
-              }}
+              margin={{ top: 10, right: hasSecondParam ? 70 : 20, left: 10, bottom: 60 }}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-              <XAxis 
-                dataKey="date" 
+              <defs>
+                <linearGradient id="grad1" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#1e88e5" stopOpacity={0.18} />
+                  <stop offset="95%" stopColor="#1e88e5" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="grad2" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#e91e63" stopOpacity={0.18} />
+                  <stop offset="95%" stopColor="#e91e63" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.06)" vertical={false} />
+              <XAxis
+                dataKey="date"
                 tickFormatter={formatDate}
-                stroke="#666"
+                stroke="#bbb"
                 interval={tickInterval}
                 angle={-35}
                 textAnchor="end"
                 height={60}
-                tick={{ fontSize: 11 }}
+                tick={{ fontSize: 11, fill: '#888' }}
+                axisLine={{ stroke: '#e0e0e0' }}
+                tickLine={false}
               />
-              <YAxis 
+              <YAxis
                 yAxisId="left"
-                stroke="#1e88e5"
+                stroke="#bbb"
                 tickFormatter={(v: number) => unit1 ? `${typeof v === 'number' ? Number(v).toFixed(1) : v} ${unit1}` : String(v)}
-                label={{ 
-                  value: unit1 || param1Name, 
-                  angle: -90, 
+                label={{
+                  value: unit1 || param1Name,
+                  angle: -90,
                   position: 'insideLeft',
                   offset: -5,
-                  style: { fill: '#1e88e5', fontSize: '13px', fontWeight: 600 }
+                  style: { fill: '#1e88e5', fontSize: '12px', fontWeight: 600 }
                 }}
                 width={unit1 ? 75 : 60}
+                tick={{ fontSize: 11, fill: '#888' }}
+                axisLine={false}
+                tickLine={false}
               />
               {hasSecondParam && (
-                <YAxis 
+                <YAxis
                   yAxisId="right"
                   orientation="right"
-                  stroke="#e91e63"
+                  stroke="#bbb"
                   tickFormatter={(v: number) => unit2 ? `${typeof v === 'number' ? Number(v).toFixed(1) : v} ${unit2}` : String(v)}
-                  label={{ 
-                    value: unit2 || param2Name, 
-                    angle: 90, 
+                  label={{
+                    value: unit2 || param2Name,
+                    angle: 90,
                     position: 'insideRight',
                     offset: 5,
-                    style: { fill: '#e91e63', fontSize: '13px', fontWeight: 600 }
+                    style: { fill: '#e91e63', fontSize: '12px', fontWeight: 600 }
                   }}
                   width={unit2 ? 75 : 60}
+                  tick={{ fontSize: 11, fill: '#888' }}
+                  axisLine={false}
+                  tickLine={false}
                 />
               )}
-              <Tooltip 
+              <Tooltip
                 labelFormatter={formatTooltipLabel}
                 formatter={(value: number | string, name: string) => {
                   const unit = name === param2Name ? unit2 : unit1;
-                  const formatted = typeof value === 'number' ? Number(value).toFixed(2) : value;
+                  const formatted = typeof value === 'number' ? Number(value).toFixed(3) : value;
                   return [`${formatted}${unit ? ' ' + unit : ''}`, name];
                 }}
                 contentStyle={{
-                  backgroundColor: '#fff',
-                  border: '1px solid #ccc',
-                  borderRadius: '8px',
-                  boxShadow: '0 4px 8px rgba(0,0,0,0.1)'
+                  backgroundColor: 'rgba(255,255,255,0.97)',
+                  border: '1px solid rgba(30,136,229,0.2)',
+                  borderRadius: '10px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                  padding: '10px 14px',
+                  fontSize: '13px',
                 }}
+                labelStyle={{ fontWeight: 700, color: '#333', marginBottom: 4 }}
+                cursor={{ stroke: 'rgba(30,136,229,0.3)', strokeWidth: 1, strokeDasharray: '4 4' }}
               />
-              <Legend />
-              <Line
+              <Legend
+                wrapperStyle={{ paddingTop: '12px', fontSize: '13px', fontWeight: 600 }}
+                iconType="circle"
+                iconSize={10}
+              />
+              <Area
                 yAxisId="left"
                 type="monotone"
                 dataKey="value"
                 stroke="#1e88e5"
                 strokeWidth={2}
+                fill="url(#grad1)"
                 dot={false}
-                activeDot={{ r: 5, stroke: '#1e88e5', strokeWidth: 2 }}
+                activeDot={{ r: 5, fill: '#1e88e5', stroke: 'white', strokeWidth: 2 }}
                 name={param1Name}
               />
               {hasSecondParam && (
-                <Line
+                <Area
                   yAxisId="right"
                   type="monotone"
                   dataKey="value2"
                   stroke="#e91e63"
                   strokeWidth={2}
+                  fill="url(#grad2)"
                   dot={false}
-                  activeDot={{ r: 5, stroke: '#e91e63', strokeWidth: 2 }}
+                  activeDot={{ r: 5, fill: '#e91e63', stroke: 'white', strokeWidth: 2 }}
                   name={param2Name}
                 />
               )}
-            </LineChart>
+            </AreaChart>
           </ResponsiveContainer>
         </Box>
       )}
