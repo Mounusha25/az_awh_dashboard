@@ -33,28 +33,58 @@ import Papa from 'papaparse';
 import { apiClient, type StationInfo, type StationReading, type ReadingsResponse, type HourlyAggregationResponse } from '@/lib/api-client';
 import { FeatureType, ChartDataPoint, StationData } from '@/types';
 
+// Magnus formula helper for absolute humidity (g/m³)
+function computeAbsHumidity(tempC: number, rhPct: number): number {
+  const es = 6.112 * Math.exp((17.67 * tempC) / (tempC + 243.5));
+  return (216.7 * (rhPct / 100) * es) / (273.15 + tempC);
+}
+
 // Field mapping: API field names to display names
 const fieldDisplayNames: Record<string, string> = {
-  temperature: 'Temperature',
-  humidity: 'Relative Humidity',
-  velocity: 'Air Velocity',
-  abs_humidity_intake: 'Abs Humidity Intake (g/m³)',
-  outtake_humidity: 'Outtake Humidity',
-  outtake_velocity: 'Outtake Velocity',
-  outtake_temperature: 'Outtake Temperature',
-  abs_humidity_outtake: 'Abs Humidity Outtake (g/m³)',
-  flow_lmin: 'Flow Rate (L/min)',
-  flow_hz: 'Flow Rate (Hz)',
+  temperature: 'Temperature (Intake)',
+  humidity: 'Relative Humidity (Intake)',
+  velocity: 'Air Velocity (Intake)',
+  abs_humidity_intake: 'Absolute Humidity (Intake)',
+  outtake_temperature: 'Temperature (Outtake)',
+  outtake_humidity: 'Relative Humidity (Outtake)',
+  outtake_velocity: 'Air Velocity (Outtake)',
+  abs_humidity_outtake: 'Absolute Humidity (Outtake)',
+  flow_lmin: 'Flow Rate',
+  flow_hz: 'Flow Frequency',
   flow_total: 'Total Flow',
-  weight: 'Weight (g)',
-  accumulated_water_L: 'Accumulated Water Production (L)',
-  incremental_water_g: 'Incremental Water Production (g)',
+  weight: 'Weight',
+  accumulated_water_L: 'Cumulative Water Production',
+  incremental_water_g: 'Incremental Water Production',
   power: 'Power',
   voltage: 'Voltage',
   current: 'Current',
-  energy: 'Energy (Wh)',
-  incremental_energy_Wh: 'Incremental Energy (Wh)',
+  energy: 'Energy',
+  incremental_energy_Wh: 'Incremental Energy',
   pump_status: 'Pump Status',
+};
+
+// Units for each field — shown on chart Y-axis labels and tooltips
+const fieldUnits: Record<string, string> = {
+  temperature: '°C',
+  humidity: '%',
+  velocity: 'm/s',
+  abs_humidity_intake: 'g/m³',
+  outtake_temperature: '°C',
+  outtake_humidity: '%',
+  outtake_velocity: 'm/s',
+  abs_humidity_outtake: 'g/m³',
+  flow_lmin: 'L/min',
+  flow_hz: 'Hz',
+  flow_total: 'L',
+  weight: 'g',
+  accumulated_water_L: 'L',
+  incremental_water_g: 'g',
+  power: 'W',
+  voltage: 'V',
+  current: 'A',
+  energy: 'Wh',
+  incremental_energy_Wh: 'Wh',
+  pump_status: '',
 };
 
 // Computed fields — derived client-side from base readings
@@ -68,14 +98,14 @@ const COMPUTED_FIELDS = new Set([
 
 // Field categories for grouping
 const fieldCategories: Record<string, string> = {
-  temperature: 'Intake Air',
-  humidity: 'Intake Air',
-  velocity: 'Intake Air',
-  abs_humidity_intake: 'Intake Air',
-  outtake_humidity: 'Outtake Air',
-  outtake_velocity: 'Outtake Air',
-  outtake_temperature: 'Outtake Air',
-  abs_humidity_outtake: 'Outtake Air',
+  temperature: 'Air Conditions',
+  humidity: 'Air Conditions',
+  velocity: 'Air Conditions',
+  abs_humidity_intake: 'Air Conditions',
+  outtake_temperature: 'Air Conditions',
+  outtake_humidity: 'Air Conditions',
+  outtake_velocity: 'Air Conditions',
+  abs_humidity_outtake: 'Air Conditions',
   flow_lmin: 'Water Production',
   flow_hz: 'Water Production',
   flow_total: 'Water Production',
@@ -103,8 +133,9 @@ export default function StationDetails() {
   const [availableFields, setAvailableFields] = useState<string[]>([]);
   
   // Defaults will be derived from actual readings data (set in useEffect to avoid hydration mismatch)
+  // Default values can be adjusted here if a broader initial query window is desired.
   const defaultEndDate = new Date('2026-04-07');
-  const defaultStartDate = new Date('2026-03-31');
+  const defaultStartDate = new Date('2025-09-01'); // Adjusted start date to September 2025
   
   // State for mounted check
   const [mounted, setMounted] = useState(false);
@@ -264,19 +295,37 @@ export default function StationDetails() {
   // Get available parameters grouped by category
   const parameterCategories = useMemo(() => {
     const categories: Record<string, string[]> = {};
-    
+
     availableFields.forEach(field => {
+      // Exclude raw weight from chart selector — replaced by cumulative water production
+      if (field === 'weight') return;
       const category = fieldCategories[field];
       const displayName = fieldDisplayNames[field];
-      
       if (category && displayName) {
-        if (!categories[category]) {
-          categories[category] = [];
-        }
+        if (!categories[category]) categories[category] = [];
         categories[category].push(field);
       }
     });
-    
+
+    // Add computed abs humidity fields (derived from base readings)
+    if (availableFields.includes('temperature') && availableFields.includes('humidity')) {
+      if (!categories['Air Conditions']) categories['Air Conditions'] = [];
+      if (!categories['Air Conditions'].includes('abs_humidity_intake'))
+        categories['Air Conditions'].push('abs_humidity_intake');
+    }
+    if (availableFields.includes('outtake_temperature') && availableFields.includes('outtake_humidity')) {
+      if (!categories['Air Conditions']) categories['Air Conditions'] = [];
+      if (!categories['Air Conditions'].includes('abs_humidity_outtake'))
+        categories['Air Conditions'].push('abs_humidity_outtake');
+    }
+
+    // Replace raw weight (g) with cumulative water production (L) in chart selector
+    if (availableFields.includes('weight')) {
+      if (!categories['Water Production']) categories['Water Production'] = [];
+      if (!categories['Water Production'].includes('accumulated_water_L'))
+        categories['Water Production'].push('accumulated_water_L');
+    }
+
     return categories;
   }, [availableFields]);
 
@@ -316,14 +365,44 @@ export default function StationDetails() {
     
     // Sort ascending by timestamp (API returns descending)
     filteredReadings.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-    
-    const fieldKey1 = selectedParameters[0] as keyof StationReading;
-    const fieldKey2 = selectedParameters.length > 1 ? selectedParameters[1] as keyof StationReading : null;
+
+    // Pre-compute cumulative water production (L) for accumulated_water_L field
+    const accWaterMap = new Map<string, number>();
+    let runningWaterG = 0;
+    let prevW: number | null = null;
+    filteredReadings.forEach(r => {
+      const w = typeof r.weight === 'number' ? r.weight : null;
+      if (w !== null) {
+        runningWaterG += prevW !== null ? Math.max(w - prevW, 0) : 0;
+        prevW = w;
+      }
+      accWaterMap.set(r.timestamp, Math.round(runningWaterG / 1000 * 1000000) / 1000000);
+    });
+
+    // Helper: resolve a field value, computing derived fields on the fly if needed
+    const resolveValue = (reading: StationReading, field: string): number => {
+      if (field === 'abs_humidity_intake') {
+        const t = reading.temperature, h = reading.humidity;
+        return typeof t === 'number' && typeof h === 'number' ? computeAbsHumidity(t, h) : 0;
+      }
+      if (field === 'abs_humidity_outtake') {
+        const t = reading.outtake_temperature, h = reading.outtake_humidity;
+        return typeof t === 'number' && typeof h === 'number' ? computeAbsHumidity(t, h) : 0;
+      }
+      if (field === 'accumulated_water_L') {
+        return accWaterMap.get(reading.timestamp) ?? 0;
+      }
+      const v = reading[field as keyof StationReading];
+      return typeof v === 'number' ? v : 0;
+    };
+
+    const field1 = selectedParameters[0];
+    const field2 = selectedParameters.length > 1 ? selectedParameters[1] : null;
     
     return filteredReadings.map(reading => ({
       date: reading.timestamp,
-      value: typeof reading[fieldKey1] === 'number' ? reading[fieldKey1] as number : 0,
-      ...(fieldKey2 ? { value2: typeof reading[fieldKey2] === 'number' ? reading[fieldKey2] as number : 0 } : {}),
+      value: resolveValue(reading, field1),
+      ...(field2 ? { value2: resolveValue(reading, field2) } : {}),
     }));
   }, [startDate, endDate, selectedParameters, readings]);
   
@@ -710,6 +789,7 @@ export default function StationDetails() {
             startDate={format(startDate, 'yyyy-MM-dd')}
             endDate={format(endDate, 'yyyy-MM-dd')}
             paramNames={selectedParameters.map(p => fieldDisplayNames[p] || p)}
+            paramUnits={selectedParameters.map(p => fieldUnits[p] || '')}
           />
         </motion.div>
       )}

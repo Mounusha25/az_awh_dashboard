@@ -20,12 +20,15 @@ interface FeaturePlotProps {
   startDate: string;
   endDate: string;
   paramNames?: string[];
+  paramUnits?: string[];
 }
 
-const FeaturePlot: React.FC<FeaturePlotProps> = ({ data, feature, startDate, endDate, paramNames }) => {
+const FeaturePlot: React.FC<FeaturePlotProps> = ({ data, feature, startDate, endDate, paramNames, paramUnits }) => {
   const hasSecondParam = data.length > 0 && data[0].value2 !== undefined;
   const param1Name = paramNames?.[0] || feature;
   const param2Name = paramNames?.[1] || 'Parameter 2';
+  const unit1 = paramUnits?.[0] || '';
+  const unit2 = paramUnits?.[1] || '';
 
   // Downsample data if too many points for clean rendering
   const plotData = React.useMemo(() => {
@@ -150,28 +153,39 @@ const FeaturePlot: React.FC<FeaturePlotProps> = ({ data, feature, startDate, end
               <YAxis 
                 yAxisId="left"
                 stroke="#1e88e5"
+                tickFormatter={(v: number) => unit1 ? `${typeof v === 'number' ? Number(v).toFixed(1) : v} ${unit1}` : String(v)}
                 label={{ 
-                  value: param1Name, 
+                  value: unit1 || param1Name, 
                   angle: -90, 
                   position: 'insideLeft',
-                  style: { fill: '#1e88e5' }
+                  offset: -5,
+                  style: { fill: '#1e88e5', fontSize: '13px', fontWeight: 600 }
                 }}
+                width={unit1 ? 75 : 60}
               />
               {hasSecondParam && (
                 <YAxis 
                   yAxisId="right"
                   orientation="right"
                   stroke="#e91e63"
+                  tickFormatter={(v: number) => unit2 ? `${typeof v === 'number' ? Number(v).toFixed(1) : v} ${unit2}` : String(v)}
                   label={{ 
-                    value: param2Name, 
+                    value: unit2 || param2Name, 
                     angle: 90, 
                     position: 'insideRight',
-                    style: { fill: '#e91e63' }
+                    offset: 5,
+                    style: { fill: '#e91e63', fontSize: '13px', fontWeight: 600 }
                   }}
+                  width={unit2 ? 75 : 60}
                 />
               )}
               <Tooltip 
                 labelFormatter={formatTooltipLabel}
+                formatter={(value: number | string, name: string) => {
+                  const unit = name === param2Name ? unit2 : unit1;
+                  const formatted = typeof value === 'number' ? Number(value).toFixed(2) : value;
+                  return [`${formatted}${unit ? ' ' + unit : ''}`, name];
+                }}
                 contentStyle={{
                   backgroundColor: '#fff',
                   border: '1px solid #ccc',
